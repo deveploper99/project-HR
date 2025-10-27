@@ -15,16 +15,13 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        // Initialize service
         smsSync = SmsSyncService(this)
 
-        // SMS permission চেক
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS)
-            != PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS)
-            != PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        // SMS permission check
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(
@@ -40,7 +37,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSmsSync() {
-        smsSync.uploadInitialSms()
+        // প্রথম 20 SMS Firebase-এ আপলোড
+        smsSync.uploadInitialSms(20)
+        // Firebase থেকে ডিলেট হলে ফোন থেকেও ডিলেট
         smsSync.listenForFirebaseDeletion()
     }
 

