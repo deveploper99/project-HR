@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "878670204763",
+    "project_id": "rasselhassan-8f931",
+    "storage_bucket": "rasselhassan-8f931.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:878670204763:android:14e23d41617f3e7fe5147e",
+        "android_client_info": {
+          "package_name": "com.example.aplay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9PzRbzgeaTBKwqFlm551ZHeW5B8XvckY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
