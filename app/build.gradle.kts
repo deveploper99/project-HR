@@ -5,18 +5,18 @@ plugins {
 }
 
 android {
-    namespace = "com.example.aplay"
+    namespace = "com.vplan.rxtprob"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.aplay"
+        applicationId = "com.vplan.rxtprob"   // ✅ FIXED LINE
         minSdk = 24
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Java এবং Kotlin target compatibility ঠিক রাখার জন্য
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -32,8 +32,13 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
 
-    // Firebase BOM ব্যবহার করলে version আলাদা দিতে হয় না
+    // ✅ Firebase BOM
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-database-ktx")
     implementation("com.google.firebase:firebase-auth-ktx")
+
+    // ✅ Test dependencies
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }

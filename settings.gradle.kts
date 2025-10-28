@@ -1,18 +1,16 @@
 pluginManagement {
     repositories {
-        google()
+        google()         // ✅ এটা Firebase এর জন্য অবশ্যই দরকার
         mavenCentral()
         gradlePluginPortal()
     }
 }
-
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
+        google()         // ✅ Firebase library এখান থেকে resolve হয়
         mavenCentral()
     }
 }
-
-rootProject.name = "aPlay"
+rootProject.name = "aplay"
 include(":app")
