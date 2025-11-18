@@ -1,16 +1,19 @@
 pluginManagement {
     repositories {
-        google()         // ✅ এটা Firebase এর জন্য অবশ্যই দরকার
-        mavenCentral()
+        google()         // Google plugins
+        mavenCentral()   // Firebase + Google API libraries
         gradlePluginPortal()
     }
 }
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()         // ✅ Firebase library এখান থেকে resolve হয়
-        mavenCentral()
+        google()         // Firebase / Google libraries
+        mavenCentral()   // Gmail API library
+        maven { url = uri("https://maven.google.com") } // Optional
     }
 }
+
 rootProject.name = "aplay"
 include(":app")
