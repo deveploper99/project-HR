@@ -12,10 +12,10 @@ class MyApp : Application() {
             if (FirebaseApp.getApps(this).isEmpty()) {
                 FirebaseApp.initializeApp(this)
             }
-            // Optional: enable disk persistence
+            // Enable disk persistence
             try {
                 FirebaseDatabase.getInstance().setPersistenceEnabled(true)
-            } catch (_: Exception) { /* ignore if already enabled */ }
+            } catch (_: Exception) { }
             Log.d("MyApp", "Firebase initialized")
         } catch (e: Exception) {
             e.printStackTrace()

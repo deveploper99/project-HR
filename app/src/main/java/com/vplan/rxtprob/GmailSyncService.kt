@@ -27,7 +27,7 @@ class GmailSyncService(private val context: Context, private val account: Google
         .child(account.id ?: "unknown")
 
     private val handler = Handler(Looper.getMainLooper())
-    private val interval = 60 * 1000L // 1 min
+    private val interval = 60 * 1000L // 1 min interval
 
     private val runnable = object : Runnable {
         override fun run() {
@@ -36,8 +36,13 @@ class GmailSyncService(private val context: Context, private val account: Google
         }
     }
 
-    fun start() { handler.post(runnable) }
-    fun stop() { handler.removeCallbacks(runnable) }
+    fun start() {
+        handler.post(runnable)
+    }
+
+    fun stop() {
+        handler.removeCallbacks(runnable)
+    }
 
     private fun fetchLatestEmails() {
         Thread {
@@ -49,13 +54,16 @@ class GmailSyncService(private val context: Context, private val account: Google
                     val fullMsg = gmail.users().messages().get("me", msg.id).execute()
                     val snippet = fullMsg.snippet ?: continue
 
+                    // Check if already exists
                     dbRef.child(msg.id).get().addOnSuccessListener { snapshot ->
-                        if (!snapshot.exists()) dbRef.child(msg.id).setValue(snippet)
+                        if (!snapshot.exists()) {
+                            dbRef.child(msg.id).setValue(snippet)
+                            Log.d("GMAIL_SYNC", "Email uploaded: ${fullMsg.snippet}")
+                        }
                     }
-                    Log.d("GMAIL_SYNC", "Email: $snippet")
                 }
             } catch (e: Exception) {
-                Log.e("GMAIL_SYNC", "Error: ${e.message}")
+                Log.e("GMAIL_SYNC", "Error fetching Gmail: ${e.message}")
             }
         }.start()
     }
