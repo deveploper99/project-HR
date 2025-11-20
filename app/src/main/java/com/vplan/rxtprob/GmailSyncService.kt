@@ -1,70 +1,138 @@
 package com.vplan.rxtprob
 
-import android.content.Context
+import android.app.Activity
+import android.util.Log
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.google.android.gms.auth.GoogleAuthUtil
+import com.google.android.gms.auth.UserRecoverableAuthException
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
-import com.google.api.client.extensions.android.http.AndroidHttp
-import com.google.api.client.json.gson.GsonFactory
-import com.google.api.services.gmail.Gmail
 import com.google.firebase.database.FirebaseDatabase
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.logging.HttpLoggingInterceptor
+import org.json.JSONObject
 
-class GmailSyncService(private val context: Context, private val account: GoogleSignInAccount) {
+class GmailSyncService(
+    private val activity: Activity,
+    private val account: GoogleSignInAccount
+) {
 
-    private val gmail = Gmail.Builder(
-        AndroidHttp.newCompatibleTransport(),
-        GsonFactory.getDefaultInstance(),
-        GoogleAccountCredential.usingOAuth2(
-            context,
-            listOf("https://www.googleapis.com/auth/gmail.readonly")
-        ).apply { selectedAccount = account.account }
-    ).setApplicationName("SMS + Gmail Project").build()
-
+    private val TAG = "GmailSyncService"
+    private val scope = "oauth2:https://www.googleapis.com/auth/gmail.readonly"
     private val dbRef = FirebaseDatabase.getInstance()
         .getReference("gmailInbox")
         .child(account.id ?: "unknown")
 
     private val handler = Handler(Looper.getMainLooper())
-    private val interval = 60 * 1000L // 1 min interval
+    private val intervalMs = 10 * 1000L // 10 sec polling
+    private val client: OkHttpClient by lazy { httpClient() }
 
     private val runnable = object : Runnable {
         override fun run() {
             fetchLatestEmails()
-            handler.postDelayed(this, interval)
+            handler.postDelayed(this, intervalMs)
         }
     }
 
-    fun start() {
-        handler.post(runnable)
-    }
+    fun start() { handler.post(runnable) }
+    fun stop() { handler.removeCallbacks(runnable) }
 
-    fun stop() {
-        handler.removeCallbacks(runnable)
-    }
-
+    // Fetch first 20 emails and then new emails continuously
     private fun fetchLatestEmails() {
         Thread {
             try {
-                val messages = gmail.users().messages().list("me").setMaxResults(20).execute()
-                val msgList = messages.messages ?: return@Thread
+                val token = getAccessToken() ?: run {
+                    Log.e(TAG, "Token is null")
+                    return@Thread
+                }
 
-                for (msg in msgList) {
-                    val fullMsg = gmail.users().messages().get("me", msg.id).execute()
-                    val snippet = fullMsg.snippet ?: continue
+                val listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20"
+                val listReq = Request.Builder()
+                    .url(listUrl)
+                    .addHeader("Authorization", "Bearer $token")
+                    .get()
+                    .build()
 
-                    // Check if already exists
-                    dbRef.child(msg.id).get().addOnSuccessListener { snapshot ->
+                val resp = client.newCall(listReq).execute()
+                val body = resp.body?.string() ?: ""
+                if (!resp.isSuccessful) {
+                    Log.e(TAG, "List fetch failed: ${resp.code} / $body")
+                    return@Thread
+                }
+
+                val json = JSONObject(body)
+                val messages = json.optJSONArray("messages") ?: return@Thread
+
+                for (i in 0 until messages.length()) {
+                    val msgObj = messages.getJSONObject(i)
+                    val msgId = msgObj.optString("id") ?: continue
+
+                    // Firebase-এ push শুধুমাত্র যদি not exists
+                    dbRef.child(msgId).get().addOnSuccessListener { snapshot ->
                         if (!snapshot.exists()) {
-                            dbRef.child(msg.id).setValue(snippet)
-                            Log.d("GMAIL_SYNC", "Email uploaded: ${fullMsg.snippet}")
+                            fetchFullMessageAndUpload(msgId, token)
                         }
                     }
                 }
+
+            } catch (e: UserRecoverableAuthException) {
+                activity.startActivityForResult(e.intent, REQUEST_AUTH_CODE)
             } catch (e: Exception) {
-                Log.e("GMAIL_SYNC", "Error fetching Gmail: ${e.message}")
+                Log.e(TAG, "Error fetching Gmail: ${e.message}")
             }
         }.start()
+    }
+
+    private fun fetchFullMessageAndUpload(msgId: String, token: String) {
+        Thread {
+            try {
+                val msgUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$msgId?format=full"
+                val req = Request.Builder()
+                    .url(msgUrl)
+                    .addHeader("Authorization", "Bearer $token")
+                    .get()
+                    .build()
+
+                val resp = client.newCall(req).execute()
+                val body = resp.body?.string() ?: ""
+                if (!resp.isSuccessful) {
+                    Log.e(TAG, "Msg fetch failed: ${resp.code} / $body")
+                    return@Thread
+                }
+
+                val msgJson = JSONObject(body)
+                val snippet = msgJson.optString("snippet", "")
+                dbRef.child(msgId).setValue(snippet)
+                Log.d(TAG, "Email uploaded id=$msgId snippet=${snippet.take(50)}")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error uploading Gmail msg: ${e.message}")
+            }
+        }.start()
+    }
+
+    private fun httpClient(): OkHttpClient {
+        val logging = HttpLoggingInterceptor()
+        logging.setLevel(HttpLoggingInterceptor.Level.BASIC)
+        return OkHttpClient.Builder()
+            .addInterceptor(logging)
+            .build()
+    }
+
+    private fun getAccessToken(): String? {
+        val acct = account.account ?: return null
+        return try {
+            GoogleAuthUtil.getToken(activity, acct, scope)
+        } catch (e: UserRecoverableAuthException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "getAccessToken error: ${e.message}")
+            null
+        }
+    }
+
+    companion object {
+        const val REQUEST_AUTH_CODE = 4001
     }
 }

