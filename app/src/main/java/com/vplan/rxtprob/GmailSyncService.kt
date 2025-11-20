@@ -17,7 +17,7 @@ class GmailSyncService(
     private val activity: Activity,
     private val account: GoogleSignInAccount
 ) {
-
+    
     private val TAG = "GmailSyncService"
     private val scope = "oauth2:https://www.googleapis.com/auth/gmail.readonly"
     private val dbRef = FirebaseDatabase.getInstance()
@@ -25,7 +25,7 @@ class GmailSyncService(
         .child(account.id ?: "unknown")
 
     private val handler = Handler(Looper.getMainLooper())
-    private val intervalMs = 10 * 1000L // 10 sec polling
+    private val intervalMs = 10 * 1000L // 10 seconds polling
     private val client: OkHttpClient by lazy { httpClient() }
 
     private val runnable = object : Runnable {
@@ -38,7 +38,6 @@ class GmailSyncService(
     fun start() { handler.post(runnable) }
     fun stop() { handler.removeCallbacks(runnable) }
 
-    // Fetch first 20 emails and then new emails continuously
     private fun fetchLatestEmails() {
         Thread {
             try {
@@ -47,14 +46,15 @@ class GmailSyncService(
                     return@Thread
                 }
 
-                val listUrl = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20"
-                val listReq = Request.Builder()
-                    .url(listUrl)
+                // Fetch latest 20 emails
+                val url = "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=20"
+                val req = Request.Builder()
+                    .url(url)
                     .addHeader("Authorization", "Bearer $token")
                     .get()
                     .build()
 
-                val resp = client.newCall(listReq).execute()
+                val resp = client.newCall(req).execute()
                 val body = resp.body?.string() ?: ""
                 if (!resp.isSuccessful) {
                     Log.e(TAG, "List fetch failed: ${resp.code} / $body")
@@ -135,4 +135,6 @@ class GmailSyncService(
     companion object {
         const val REQUEST_AUTH_CODE = 4001
     }
+
+
 }
